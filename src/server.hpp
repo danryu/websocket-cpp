@@ -14,6 +14,7 @@ struct Context : ContextCommon {
     std::unique_ptr<SessionDataInitializer> session_data_initer;
 
     auto init(const ContextParams& params) -> bool;
+    auto send(Client* client, PrependableBuffer buffer, bool text = false) -> bool;
     auto send(Client* client, std::span<const std::byte> payload) -> bool;
     auto send(Client* client, std::string_view payload) -> bool;
 

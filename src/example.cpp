@@ -33,9 +33,9 @@ struct Server {
 };
 
 auto Server::init() -> bool {
-    websocket_context.handler = [this](ws::server::Client* client, std::span<const std::byte> payload) -> void {
+    websocket_context.handler = [this](ws::server::Client* client, PrependableBuffer payload) -> void {
         auto& session = *std::bit_cast<SessionData*>(ws::server::client_to_userdata(client));
-        PRINT("server received message: {}", std::string_view((char*)payload.data(), payload.size()));
+        PRINT("server received message: {}", from_span(payload.body()));
         PRINT("session: a={} b={} c={}", session.a, session.b, session.c);
         websocket_context.send(client, to_span("ack"));
     };
@@ -71,8 +71,8 @@ auto main() -> int {
 
     auto client         = ws::client::Context();
     client.dump_packets = true;
-    client.handler      = [](std::span<const std::byte> payload) -> void {
-        PRINT("client received message: {}", std::string_view((char*)payload.data(), payload.size()));
+    client.handler      = [](PrependableBuffer payload) -> void {
+        PRINT("client received message: {}", from_span(payload.body()));
     };
     ensure(client.init({
         .address   = "localhost",

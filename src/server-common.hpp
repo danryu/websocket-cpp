@@ -14,7 +14,7 @@ struct SessionDataInitializerCommon {
 };
 
 template <class T>
-using OnDataReceivedCommon = void(T* client, std::span<const std::byte> payload);
+using OnDataReceivedCommon = void(T* client, PrependableBuffer payload);
 
 enum class State {
     Connected,
@@ -31,9 +31,9 @@ struct ContextParams {
 
 struct ContextCommon {
     // private
-    impl::AutoLWSContext   context;
-    std::vector<std::byte> receive_buffer;
-    State                  state;
+    impl::AutoLWSContext context;
+    PrependableBuffer    receive_buffer;
+    State                state;
 
     auto init_protocol(const ContextParams& params, size_t session_data_size, const void* session_callback) -> bool;
 

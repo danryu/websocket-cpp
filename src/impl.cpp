@@ -2,47 +2,26 @@
 
 #include "impl.hpp"
 #include "macros/assert.hpp"
-#include "util/span.hpp"
 
 namespace ws::impl {
 namespace {
-auto push_to_send_buffers(SendBuffers& send_buffers, const std::span<const std::byte> payload, const bool text) -> void {
-    auto data = std::vector<std::byte>(LWS_SEND_BUFFER_PRE_PADDING + payload.size() + LWS_SEND_BUFFER_POST_PADDING);
-    auto head = data.data() + LWS_SEND_BUFFER_PRE_PADDING;
-    memcpy(head, payload.data(), payload.size());
+auto push_to_send_buffers(SendBuffers& send_buffers, PrependableBuffer buffer, const bool text) -> void {
+    buffer.enlarge_forward(LWS_SEND_BUFFER_PRE_PADDING);
+    buffer.enlarge(LWS_SEND_BUFFER_POST_PADDING);
     auto [lock, buf] = send_buffers.access();
-    buf.push({std::move(data), text});
+    buf.push({std::move(buffer), text});
 }
 } // namespace
 
-auto append(std::vector<std::byte>& vec, void* const in, const size_t len) -> void {
-    const auto ptr = std::bit_cast<std::byte*>(in);
-    vec.insert(vec.end(), ptr, ptr + len);
-}
-
-auto append_payload(lws* wsi, std::vector<std::byte>& buffer, void* const in, const size_t len) -> std::span<std::byte> {
+auto append_payload(lws* wsi, PrependableBuffer& buffer, void* const in, const size_t len) -> bool {
+    std::memcpy(buffer.enlarge(len).data(), in, len);
     const auto remaining = lws_remaining_packet_payload(wsi);
     const auto final     = lws_is_final_fragment(wsi);
-    if(remaining != 0 || !final) {
-        append(buffer, in, len);
-        return {};
-    }
-    if(buffer.empty()) {
-        return {std::bit_cast<std::byte*>(in), len};
-    } else {
-        append(buffer, in, len);
-        return buffer;
-    }
+    return remaining == 0 && final;
 }
 
-auto push_to_send_buffers_and_cancel_service(SendBuffers& send_buffers, const std::span<const std::byte> payload, lws* const wsi) -> void {
-    push_to_send_buffers(send_buffers, payload, false);
-    lws_callback_on_writable(wsi);
-    lws_cancel_service_pt(wsi);
-}
-
-auto push_to_send_buffers_and_cancel_service(SendBuffers& send_buffers, const std::string_view payload, lws* const wsi) -> void {
-    push_to_send_buffers(send_buffers, to_span(payload), true);
+auto push_to_send_buffers_and_cancel_service(SendBuffers& send_buffers, PrependableBuffer buffer, const bool text, lws* const wsi) -> void {
+    push_to_send_buffers(send_buffers, buffer, text);
     lws_callback_on_writable(wsi);
     lws_cancel_service_pt(wsi);
 }
@@ -59,8 +38,9 @@ auto send_one_from_send_buffer(SendBuffers& send_buffers, lws* const wsi) -> boo
         buf.pop();
         empty = buf.empty();
     }
-    const auto head = packet.data.data() + LWS_SEND_BUFFER_PRE_PADDING;
-    const auto size = packet.data.size() - LWS_SEND_BUFFER_PRE_PADDING - LWS_SEND_BUFFER_POST_PADDING;
+    const auto body = packet.data.body();
+    const auto head = body.data() + LWS_SEND_BUFFER_PRE_PADDING;
+    const auto size = body.size() - LWS_SEND_BUFFER_PRE_PADDING - LWS_SEND_BUFFER_POST_PADDING;
     const auto ret  = lws_write(wsi, std::bit_cast<unsigned char*>(head), size, packet.text ? LWS_WRITE_TEXT : LWS_WRITE_BINARY);
     ensure(ret >= int(size));
     if(!empty) {

@@ -3,6 +3,7 @@
 #include "macros/logger.hpp"
 #include "misc.hpp"
 #include "server.hpp"
+#include "util/span.hpp"
 
 #define CUTIL_MACROS_PRINT_FUNC(...) LOG_ERROR(logger, __VA_ARGS__)
 #include "macros/assert.hpp"
@@ -26,14 +27,12 @@ auto protocol_callback(lws* const wsi, const lws_callback_reasons reason, void* 
             PRINT("received {} bytes:", len);
             dump_hex({(std::byte*)in, len});
         }
-        const auto payload = impl::append_payload(wsi, ctx->receive_buffer, in, len);
-        if(payload.empty()) {
-            return 0;
+        if(impl::append_payload(wsi, ctx->receive_buffer, in, len)) {
+            auto buf = std::exchange(ctx->receive_buffer, {});
+            if(ctx->handler) {
+                ctx->handler(wsi, std::move(buf));
+            }
         }
-        if(ctx->handler) {
-            ctx->handler(wsi, payload);
-        }
-        ctx->receive_buffer.clear();
         return 0;
     }
     case LWS_CALLBACK_SERVER_WRITEABLE: {
@@ -72,24 +71,30 @@ auto Context::init(const ContextParams& params) -> bool {
     return init_protocol(params, sizeof(SessionData), (void*)protocol_callback);
 }
 
-auto Context::send(Client* const client, const std::span<const std::byte> payload) -> bool {
+auto Context::send(Client* client, PrependableBuffer buffer, bool text) -> bool {
     if(dump_packets) {
-        PRINT("sending {} bytes of binary:", payload.size());
-        dump_hex(payload);
+        if(text) {
+            PRINT("sending {} bytes of text:", buffer.size(), from_span(buffer.body()));
+        } else {
+            PRINT("sending {} bytes of binary:", buffer.size());
+            dump_hex(buffer.body());
+        }
     }
     const auto base = (SessionData*)lws_wsi_user(client);
-    impl::push_to_send_buffers_and_cancel_service(base->send_buffers, payload, client);
+    impl::push_to_send_buffers_and_cancel_service(base->send_buffers, buffer, text, client);
     return true;
 }
 
+auto Context::send(Client* const client, const std::span<const std::byte> payload) -> bool {
+    auto buffer = PrependableBuffer();
+    std::memcpy(buffer.enlarge(payload.size()).data(), payload.data(), payload.size());
+    return send(client, std::move(buffer), false);
+}
+
 auto Context::send(Client* const client, std::string_view payload) -> bool {
-    if(dump_packets) {
-        PRINT("sending {} bytes of text:", payload.size());
-        std::println("{}", payload);
-    }
-    const auto base = (SessionData*)lws_wsi_user(client);
-    impl::push_to_send_buffers_and_cancel_service(base->send_buffers, payload, client);
-    return true;
+    auto buffer = PrependableBuffer();
+    std::memcpy(buffer.enlarge(payload.size()).data(), payload.data(), payload.size());
+    return send(client, std::move(buffer), true);
 }
 
 Context::~Context() {
