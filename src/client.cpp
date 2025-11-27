@@ -70,6 +70,7 @@ auto callback(lws* const wsi, const lws_callback_reasons reason, void* /*user*/,
 } // namespace
 
 auto Context::init(const ContextParams& params) -> bool {
+    state = State::Initialized;
     const auto protocols = std::array<lws_protocols, 2>{{
         {
             .name           = params.protocol,
@@ -95,6 +96,10 @@ auto Context::init(const ContextParams& params) -> bool {
     context.reset(lws_create_context(&context_creation_info));
     ensure(context.get() != NULL);
 
+    if (state == State::Destroyed) {
+        return false;
+    }
+
     const auto host                = std::format("{}:{}", params.address, params.port);
     const auto client_connect_info = lws_client_connect_info{
         .context                   = context.get(),
@@ -111,7 +116,6 @@ auto Context::init(const ContextParams& params) -> bool {
     ensure(wsi != NULL);
 
     // wait for connection
-    state = State::Initialized;
     while(state == State::Initialized) {
         lws_service(context.get(), 50);
     }
@@ -143,6 +147,8 @@ auto Context::send(std::string_view payload) -> bool {
 
 auto Context::shutdown() -> void {
     state = State::Destroyed;
-    lws_cancel_service(context.get());
+    if (context) {
+        lws_cancel_service(context.get());
+    }
 }
 } // namespace ws::client
