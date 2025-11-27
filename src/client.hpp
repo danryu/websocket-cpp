@@ -1,5 +1,4 @@
 #pragma once
-#include <atomic>
 #include <functional>
 #include <span>
 #include <vector>
@@ -39,7 +38,7 @@ struct Context {
     lws*                   wsi;
     std::vector<std::byte> receive_buffer;
     impl::SendBuffers      send_buffers;
-    std::atomic<State>     state;
+    State                  state;
 
     // set by user
     std::function<OnDataReceived> handler;
