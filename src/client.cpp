@@ -34,10 +34,12 @@ auto callback(lws* const wsi, const lws_callback_reasons reason, void* /*user*/,
         return 0;
     case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
         LOG_WARN(logger, "connection error");
+        ctx->wsi   = nullptr;
         ctx->state = State::Destroyed;
         return -1;
     case LWS_CALLBACK_CLIENT_CLOSED:
         LOG_DEBUG(logger, "connection closed");
+        ctx->wsi   = nullptr;
         ctx->state = State::Destroyed;
         return -1;
     case LWS_CALLBACK_CLIENT_RECEIVE: {
@@ -123,6 +125,10 @@ auto Context::process() -> bool {
 }
 
 auto Context::send(PrependableBuffer buffer, bool text) -> bool {
+    if(state != State::Connected || wsi == nullptr) {
+        LOG_WARN(logger, "send called on disconnected websocket; dropping {} bytes", buffer.size());
+        return false;
+    }
     if(dump_packets) {
         if(text) {
             PRINT("sending {} bytes of text:", buffer.size(), from_span(buffer.body()));
