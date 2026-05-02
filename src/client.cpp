@@ -3,6 +3,7 @@
 #include "client.hpp"
 #include "macros/logger.hpp"
 #include "misc.hpp"
+#include "util/span.hpp"
 
 #define CUTIL_MACROS_PRINT_FUNC(...) LOG_ERROR(logger, __VA_ARGS__)
 #include "macros/assert.hpp"
@@ -44,14 +45,12 @@ auto callback(lws* const wsi, const lws_callback_reasons reason, void* /*user*/,
             PRINT("received {} bytes:", len);
             dump_hex({(std::byte*)in, len});
         }
-        const auto payload = impl::append_payload(wsi, ctx->receive_buffer, in, len);
-        if(payload.empty()) {
-            return 0;
+        if(impl::append_payload(wsi, ctx->receive_buffer, in, len)) {
+            auto buf = std::exchange(ctx->receive_buffer, {});
+            if(ctx->handler) {
+                ctx->handler(std::move(buf));
+            }
         }
-        if(ctx->handler) {
-            ctx->handler(payload);
-        }
-        ctx->receive_buffer.clear();
         return 0;
     } break;
     case LWS_CALLBACK_CLIENT_WRITEABLE: {
@@ -123,22 +122,29 @@ auto Context::process() -> bool {
     return state == State::Connected;
 }
 
-auto Context::send(const std::span<const std::byte> payload) -> bool {
+auto Context::send(PrependableBuffer buffer, bool text) -> bool {
     if(dump_packets) {
-        PRINT("sending {} bytes of binary:", payload.size());
-        dump_hex(payload);
+        if(text) {
+            PRINT("sending {} bytes of text:", buffer.size(), from_span(buffer.body()));
+        } else {
+            PRINT("sending {} bytes of binary:", buffer.size());
+            dump_hex(buffer.body());
+        }
     }
-    impl::push_to_send_buffers_and_cancel_service(send_buffers, payload, wsi);
+    impl::push_to_send_buffers_and_cancel_service(send_buffers, buffer, text, wsi);
     return true;
 }
 
-auto Context::send(std::string_view payload) -> bool {
-    if(dump_packets) {
-        PRINT("sending {} bytes of text:", payload.size());
-        std::println("{}", payload);
-    }
-    impl::push_to_send_buffers_and_cancel_service(send_buffers, payload, wsi);
-    return true;
+auto Context::send(const std::span<const std::byte> payload) -> bool {
+    auto buffer = PrependableBuffer();
+    std::memcpy(buffer.enlarge(payload.size()).data(), payload.data(), payload.size());
+    return send(std::move(buffer), false);
+}
+
+auto Context::send(const std::string_view payload) -> bool {
+    auto buffer = PrependableBuffer();
+    std::memcpy(buffer.enlarge(payload.size()).data(), payload.data(), payload.size());
+    return send(std::move(buffer), true);
 }
 
 auto Context::shutdown() -> void {

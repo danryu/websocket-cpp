@@ -5,9 +5,10 @@
 
 #include "common.hpp"
 #include "impl.hpp"
+#include "util/prependable-buffer.hpp"
 
 namespace ws::client {
-using OnDataReceived = void(std::span<const std::byte> payload);
+using OnDataReceived = void(PrependableBuffer payload);
 
 enum class State {
     Initialized,
@@ -34,11 +35,11 @@ struct ContextParams {
 
 struct Context {
     // set by library
-    impl::AutoLWSContext   context;
-    lws*                   wsi;
-    std::vector<std::byte> receive_buffer;
-    impl::SendBuffers      send_buffers;
-    State                  state;
+    impl::AutoLWSContext context;
+    lws*                 wsi;
+    PrependableBuffer    receive_buffer;
+    impl::SendBuffers    send_buffers;
+    State                state;
 
     // set by user
     std::function<OnDataReceived> handler;
@@ -48,6 +49,7 @@ struct Context {
 
     auto init(const ContextParams& params) -> bool;
     auto process() -> bool;
+    auto send(PrependableBuffer buffer, bool text = false) -> bool;
     auto send(std::span<const std::byte> payload) -> bool;
     auto send(std::string_view payload) -> bool;
     auto shutdown() -> void;
