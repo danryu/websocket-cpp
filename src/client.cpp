@@ -1,3 +1,12 @@
+// The prebuilt libwebsockets we link against (vcpkg/MSVC) is a release build (/MD,
+// NDEBUG). Force this translation unit's <libwebsockets.h> into release mode so the
+// header's inline code and any assert()s match the library's CRT/ABI; without this a
+// debug build (_DEBUG / /MDd) hits _ITERATOR_DEBUG_LEVEL and heap-ABI mismatches.
+// Scoped to the libwebsockets include only -- keep this block immediately before it.
+#ifndef NDEBUG
+#define NDEBUG
+#endif
+#undef _DEBUG
 #include <libwebsockets.h>
 
 #include "client.hpp"
