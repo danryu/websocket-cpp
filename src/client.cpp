@@ -1,3 +1,7 @@
+#ifndef NDEBUG
+#define NDEBUG
+#endif
+#undef _DEBUG
 #include <libwebsockets.h>
 
 #include "client.hpp"
