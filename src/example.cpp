@@ -41,7 +41,7 @@ auto Server::init() -> bool {
     };
     websocket_context.session_data_initer.reset(new SessionDataInitializer());
     websocket_context.dump_packets = true;
-    ensure_v(websocket_context.init({
+    ensure(websocket_context.init({
         .protocol    = "message",
         .cert        = "files/localhost.cert",
         .private_key = "files/localhost.key",
